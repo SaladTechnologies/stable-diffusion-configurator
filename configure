@@ -1,0 +1,391 @@
+#! /usr/bin/env bash
+
+set -eo pipefail
+
+usage='
+Usage: ./configure [--options] [--help]
+  --ckpt-path <path>: path where checkpoints should be saved
+  --vae-path <path>: path where vae weights should be saved
+  --controlnet-model-path <path>: path where controlnet models should be saved
+  --lora-path <path>: path where lora models should be saved
+  --extension-path <path>: path where extensions should be saved
+  --civitai-version-ids <ids>: comma separated list of civitai version ids
+  --ckpt-urls <urls>: comma separated list of urls to download checkpoints from
+  --vae-urls <urls>: comma separated list of urls to download vae weights from
+  --controlnet-model-urls <urls>: comma separated list of urls to download controlnet models from
+  --lora-urls <urls>: comma separated list of urls to download lora models from
+  --extension-urls <urls>: comma separated list of git urls to download extensions from
+  --sdxl-base: download SDXL base model. 1 for yes, 0 for no. Default is 0.
+  --sdxl-refiner: download SDXL refiner model. 1 for yes, 0 for no. Default is 0.
+  --help: print this message
+'
+
+ckpt_path=""
+vae_path=""
+controlnet_model_path=""
+lora_path=""
+extension_path=""
+civitai_version_ids=""
+ckpt_urls=""
+vae_urls=""
+controlnet_model_urls=""
+lora_urls=""
+extension_urls=""
+sdxl_base=0
+sdxl_refiner=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+  --ckpt-path)
+    ckpt_path="$2"
+    shift 2
+    ;;
+  --vae-path)
+    vae_path="$2"
+    shift 2
+    ;;
+  --controlnet-model-path)
+    controlnet_model_path="$2"
+    shift 2
+    ;;
+  --lora-path)
+    lora_path="$2"
+    shift 2
+    ;;
+  --extension-path)
+    extension_path="$2"
+    shift 2
+    ;;
+  --civitai-version-ids)
+    civitai_version_ids="$2"
+    shift 2
+    ;;
+  --ckpt-urls)
+    ckpt_urls="$2"
+    shift 2
+    ;;
+  --vae-urls)
+    vae_urls="$2"
+    shift 2
+    ;;
+  --controlnet-model-urls)
+    controlnet_model_urls="$2"
+    shift 2
+    ;;
+  --lora-urls)
+    lora_urls="$2"
+    shift 2
+    ;;
+  --extension-urls)
+    extension_urls="$2"
+    shift 2
+    ;;
+  --sdxl-base)
+    sdxl_base="$2"
+    shift 2
+    ;;
+  --sdxl-refiner)
+    sdxl_refiner="$2"
+    shift 2
+    ;;
+  --help)
+    echo "$usage"
+    exit 0
+    ;;
+  *)
+    echo "Unknown option $1"
+    echo $usage
+    exit 1
+    ;;
+  esac
+done
+
+# For each path that is set, mkdir -p to create it if it doesn't exist, and make sure it ends with a /
+if [ -n "$ckpt_path" ]; then
+  mkdir -p $ckpt_path
+  if [[ ! "$ckpt_path" == */ ]]; then
+    ckpt_path="$ckpt_path/"
+  fi
+fi
+if [ -n "$vae_path" ]; then
+  mkdir -p $vae_path
+  if [[ ! "$vae_path" == */ ]]; then
+    vae_path="$vae_path/"
+  fi
+fi
+if [ -n "$controlnet_model_path" ]; then
+  mkdir -p $controlnet_model_path
+  if [[ ! "$controlnet_model_path" == */ ]]; then
+    controlnet_model_path="$controlnet_model_path/"
+  fi
+fi
+if [ -n "$lora_path" ]; then
+  mkdir -p $lora_path
+  if [[ ! "$lora_path" == */ ]]; then
+    lora_path="$lora_path/"
+  fi
+fi
+if [ -n "$extension_path" ]; then
+  mkdir -p $extension_path
+  if [[ ! "$extension_path" == */ ]]; then
+    extension_path="$extension_path/"
+  fi
+fi
+
+# Keep a list of all the different models we load, so we can export something at the end
+all_ckpts=""
+all_vae=""
+all_controlnet=""
+all_lora=""
+all_extensions=""
+sdxl=false
+
+function getModelFile() {
+  json=$1
+
+  # json is an object with a key "files" which is an array of objects. We want to select the object where .type = Model
+  files=$(echo $json | jq -r '.files')
+  model_file=$(echo $files | jq -r '.[] | select(.type == "Model")')
+  echo $model_file
+}
+
+function getConfigFile() {
+  json=$1
+
+  # json is an object with a key "files" which is an array of objects. We want to select the object where .type = Config
+  files=$(echo $json | jq -r '.files')
+  config_file=$(echo $files | jq -r '.[] | select(.type == "Config")')
+  echo $config_file
+}
+
+function download_civitai_model() {
+  model_version_id=$1
+  echo "Checking Civit.ai model $model_version_id" >&2
+  model_info=$(curl -sSf https://civitai.com/api/v1/model-versions/$model_version_id)
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to fetch model info."
+    exit 1
+  fi
+
+  base_model=$(echo $model_info | jq -r '.baseModel')
+
+  model_file_obj=$(getModelFile "$model_info")
+  model_filename=$(echo $model_file_obj | jq -r '.name')
+  config_file_obj=$(getConfigFile "$model_info")
+  config_filename=$(echo $config_file_obj | jq -r '.name')
+  download_url=$(echo $model_file_obj | jq -r '.downloadUrl')
+  model_name=$(echo $model_info | jq -r '.model.name')
+  model_type=$(echo $model_info | jq -r '.model.type')
+
+  if [ "$model_type" == "Checkpoint" ]; then
+    if [ -z "$ckpt_path" ]; then
+      echo "Error: No checkpoint path specified"
+      exit 1
+    fi
+    dest_file=$ckpt_path$model_filename
+    all_ckpts="$all_ckpts $model_filename"
+  elif [ "$model_type" == "Controlnet" ]; then
+    if [ -z "$controlnet_model_path" ]; then
+      echo "Error: No controlnet model path specified"
+      exit 1
+    fi
+    dest_file=$controlnet_model_path$model_filename
+    all_controlnet="$all_controlnet $model_filename"
+  elif [ "$model_type" == "VAE" ]; then
+    if [ -z "$vae_path" ]; then
+      echo "Error: No vae path specified"
+      exit 1
+    fi
+    dest_file=$vae_path$model_filename
+    all_vae="$all_vae $model_filename"
+  elif [ "$model_type" == "LORA" ]; then
+    if [ -z "$lora_path" ]; then
+      echo "Error: No lora path specified"
+      exit 1
+    fi
+    dest_file=$lora_path$model_filename
+    all_lora="$all_lora $model_filename"
+  else
+    echo "Error: Unknown model type $model_type"
+    exit 1
+  fi
+
+  echo "Downloading $model_name ($model_type) as $model_filename from $download_url" >&2
+
+  # if base_model contains SDXL, we need to set the backend to diffusers
+  if [[ $base_model == *"SDXL"* ]]; then
+    sdxl=true
+  fi
+  if [ -f "$dest_file" ] && [ -s "$dest_file" ]; then
+    echo "File $dest_file already exists and is not empty. Skipping download." >&2
+  else
+    time_output=$(time (wget -q $download_url --content-disposition -O $dest_file 2>&1) 2>&1)
+    real_time=$(echo $time_output | grep real | awk '{print $2}')
+    echo "Downloaded $model_name ($model_type) as $dest_file in $real_time" >&2
+  fi
+
+  if [ -n "$config_file_obj" ]; then
+    config_download_url=$(echo $config_file_obj | jq -r '.downloadUrl')
+    download_location=$(dirname "$dest_file")/$config_filename
+    echo "Downloading config file $config_filename from $config_download_url" >&2
+    time_output=$(time (wget -q $config_download_url --content-disposition -O $download_location 2>&1) 2>&1)
+    real_time=$(echo $time_output | grep real | awk '{print $2}')
+    echo "Downloaded config file $config_filename as $download_location in $real_time" >&2
+  fi
+}
+
+function download_extension() {
+  if [ -z "$extension_path" ]; then
+    echo "Error: No extension path specified"
+    exit 1
+  fi
+  extension_url=$1
+  extension_name=$(basename $extension_url)
+  # remove .git from the end
+  extension_name=${extension_name%.git}
+  echo "Downloading $extension_name from $extension_url" >&2
+  pushd $extension_path
+  git clone $extension_url
+  all_extensions="$all_extensions $extension_name"
+  popd
+}
+
+function download_file() {
+  url=$1
+  dest_file=$2
+  echo "Downloading $url as $dest_file" >&2
+  if [ -f "$dest_file" ] && [ -s "$dest_file" ]; then
+    echo "File $dest_file already exists and is not empty. Skipping download." >&2
+  else
+    time_output=$(time (wget -q $url --content-disposition -O $dest_file 2>&1) 2>&1)
+    real_time=$(echo $time_output | grep real | awk '{print $2}')
+    echo "Downloaded $url as $dest_file in $real_time" >&2
+  fi
+}
+
+if [ -n "$civitai_version_ids" ]; then
+  IFS=',' read -ra civitai_version_ids_array <<<"$civitai_version_ids"
+  for model_version_id in "${civitai_version_ids_array[@]}"; do
+    download_civitai_model $model_version_id
+  done
+fi
+
+if [ -n "$ckpt_urls" ]; then
+  if [ -z "$ckpt_path" ]; then
+    echo "Error: No checkpoint path specified"
+    exit 1
+  fi
+  IFS=',' read -ra ckpt_urls_array <<<"$ckpt_urls"
+  for url in "${ckpt_urls_array[@]}"; do
+    dest_file=$(basename $url)
+    dest_file=${dest_file%%\?*}
+    download_file $url $ckpt_path$dest_file
+    all_ckpts="$all_ckpts $dest_file"
+  done
+fi
+
+if [ -n "$vae_urls" ]; then
+  if [ -z "$vae_path" ]; then
+    echo "Error: No vae path specified"
+    exit 1
+  fi
+  IFS=',' read -ra vae_urls_array <<<"$vae_urls"
+  for url in "${vae_urls_array[@]}"; do
+    dest_file=$(basename $url)
+    dest_file=${dest_file%%\?*}
+    download_file $url $vae_path$dest_file
+    all_vae="$all_vae $dest_file"
+  done
+fi
+
+if [ -n "$controlnet_model_urls" ]; then
+  if [ -z "$controlnet_model_path" ]; then
+    echo "Error: No controlnet model path specified"
+    exit 1
+  fi
+  IFS=',' read -ra controlnet_model_urls_array <<<"$controlnet_model_urls"
+  for url in "${controlnet_model_urls_array[@]}"; do
+    dest_file=$(basename $url)
+    dest_file=${dest_file%%\?*}
+    download_file $url $controlnet_model_path$dest_file
+    all_controlnet="$all_controlnet $dest_file"
+  done
+fi
+
+if [ -n "$lora_urls" ]; then
+  if [ -z "$lora_path" ]; then
+    echo "Error: No lora path specified"
+    exit 1
+  fi
+  IFS=',' read -ra lora_urls_array <<<"$lora_urls"
+  for url in "${lora_urls_array[@]}"; do
+    dest_file=$(basename $url)
+    dest_file=${dest_file%%\?*}
+    download_file $url $lora_path$dest_file
+    all_lora="$all_lora $dest_file"
+  done
+fi
+
+if [ -n "$extension_urls" ]; then
+  IFS=',' read -ra extension_urls_array <<<"$extension_urls"
+  for url in "${extension_urls_array[@]}"; do
+    download_extension $url
+  done
+fi
+
+if [ "$sdxl_base" == "1" ]; then
+  download_file https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors?download=true $ckpt_path"sd_xl_base_1.0.safetensors"
+  sdxl=true
+  all_ckpts="$all_ckpts sd_xl_base_1.0.safetensors"
+fi
+
+if [ "$sdxl_refiner" == "1" ]; then
+  download_file https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0/resolve/main/sd_xl_refiner_1.0.safetensors?download=true $ckpt_path"sd_xl_refiner_1.0.safetensors"
+  sdxl=true
+  all_ckpts="$all_ckpts sd_xl_refiner_1.0.safetensors"
+fi
+
+# Create a JSON file with all the models we downloaded. Use JQ to format it nicely.
+echo "Creating model manifest" >&2
+manifest_file="model_manifest.json"
+base_json='{
+  "models": {
+    "checkpoints": [],
+    "vae": [],
+    "controlnet": [],
+    "lora": []
+  },
+  "extensions": [],
+  "sdxl": false
+}'
+
+# all_ckpts is a space separated list of files. We want to convert it to a JSON array
+if [ -n "$all_ckpts" ]; then
+  ckpt_array=$(echo $all_ckpts | tr " " "\n" | jq -R . | jq -s .)
+  base_json=$(echo $base_json | jq --argjson ckpt_array "$ckpt_array" '.models.checkpoints = $ckpt_array')
+fi
+
+if [ -n "$all_vae" ]; then
+  vae_array=$(echo $all_vae | tr " " "\n" | jq -R . | jq -s .)
+  base_json=$(echo $base_json | jq --argjson vae_array "$vae_array" '.models.vae = $vae_array')
+fi
+
+if [ -n "$all_controlnet" ]; then
+  controlnet_array=$(echo $all_controlnet | tr " " "\n" | jq -R . | jq -s .)
+  base_json=$(echo $base_json | jq --argjson controlnet_array "$controlnet_array" '.models.controlnet = $controlnet_array')
+fi
+
+if [ -n "$all_lora" ]; then
+  lora_array=$(echo $all_lora | tr " " "\n" | jq -R . | jq -s .)
+  base_json=$(echo $base_json | jq --argjson lora_array "$lora_array" '.models.lora = $lora_array')
+fi
+
+if [ -n "$all_extensions" ]; then
+  extension_array=$(echo $all_extensions | tr " " "\n" | jq -R . | jq -s .)
+  base_json=$(echo $base_json | jq --argjson extension_array "$extension_array" '.extensions = $extension_array')
+fi
+
+if [ "$sdxl" == "true" ]; then
+  base_json=$(echo $base_json | jq '.sdxl = true')
+fi
+
+echo $base_json
