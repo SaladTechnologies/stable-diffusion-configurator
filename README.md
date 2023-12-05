@@ -1,7 +1,16 @@
 # stable-diffusion-configurator
 A utility for automatically downloading stable diffusion model weights from civit.ai and the web
 
+## Install
+
+To install the utility, run the following commands:
+```bash
+wget https://raw.githubusercontent.com/SaladTechnologies/stable-diffusion-configurator/main/configure
+chmod +x configure
+```
+
 ## Use
+
 To use the utility, specify the models and the output paths for the models you want to download. 
 The utility will download the models from civit.ai and the web and save them to the specified paths.
 The utility will also download the extensions from the specified git urls and save them to the specified paths.
