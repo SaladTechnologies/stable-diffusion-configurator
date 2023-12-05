@@ -4,35 +4,35 @@ set -eo pipefail
 
 usage='
 Usage: ./configure [--options] [--help]
-  --ckpt-path <path>: path where checkpoints should be saved
-  --vae-path <path>: path where vae weights should be saved
-  --controlnet-model-path <path>: path where controlnet models should be saved
-  --lora-path <path>: path where lora models should be saved
-  --extension-path <path>: path where extensions should be saved
-  --civitai-version-ids <ids>: comma separated list of civitai version ids
-  --ckpt-urls <urls>: comma separated list of urls to download checkpoints from
-  --vae-urls <urls>: comma separated list of urls to download vae weights from
-  --controlnet-model-urls <urls>: comma separated list of urls to download controlnet models from
-  --lora-urls <urls>: comma separated list of urls to download lora models from
-  --extension-urls <urls>: comma separated list of git urls to download extensions from
-  --sdxl-base: download SDXL base model. 1 for yes, 0 for no. Default is 0.
-  --sdxl-refiner: download SDXL refiner model. 1 for yes, 0 for no. Default is 0.
+  --ckpt-path <path>: path where checkpoints should be saved. Env: CKPT_PATH
+  --vae-path <path>: path where vae weights should be saved. Env: VAE_PATH
+  --controlnet-model-path <path>: path where controlnet models should be saved. Env: CONTROLNET_MODEL_PATH
+  --lora-path <path>: path where lora models should be saved. Env: LORA_PATH
+  --extension-path <path>: path where extensions should be saved. Env: EXTENSION_PATH
+  --civitai-version-ids <ids>: comma separated list of civitai version ids. Env: CIVITAI_MODEL_VERSION_IDS
+  --ckpt-urls <urls>: comma separated list of urls to download checkpoints from. Env: CKPT_URLS
+  --vae-urls <urls>: comma separated list of urls to download vae weights from. Env: VAE_URLS
+  --controlnet-model-urls <urls>: comma separated list of urls to download controlnet models from. Env: CONTROLNET_URLS
+  --lora-urls <urls>: comma separated list of urls to download lora models from. Env: LORA_URLS
+  --extension-urls <urls>: comma separated list of git urls to download extensions from. Env: EXTENSION_URLS
+  --sdxl-base: download SDXL base model. 1 for yes, 0 for no. Default is 0. Env: LOAD_SDXL_BASE
+  --sdxl-refiner: download SDXL refiner model. 1 for yes, 0 for no. Default is 0. Env: LOAD_REFINER
   --help: print this message
 '
 
-ckpt_path=""
-vae_path=""
-controlnet_model_path=""
-lora_path=""
-extension_path=""
-civitai_version_ids=""
-ckpt_urls=""
-vae_urls=""
-controlnet_model_urls=""
-lora_urls=""
-extension_urls=""
-sdxl_base=0
-sdxl_refiner=0
+ckpt_path=${CKPT_PATH:-""}
+vae_path=${VAE_PATH:-""}
+controlnet_model_path=${CONTROLNET_MODEL_PATH:-""}
+lora_path=${LORA_PATH:-""}
+extension_path=${EXTENSION_PATH:-""}
+civitai_version_ids=${CIVITAI_MODEL_VERSION_IDS:-""}
+ckpt_urls=${CKPT_URLS:-""}
+vae_urls=${VAE_URLS:-""}
+controlnet_model_urls=${CONTROLNET_URLS:-""}
+lora_urls=${LORA_URLS:-""}
+extension_urls=${EXTENSION_URLS:-""}
+sdxl_base=${LOAD_SDXL_BASE:-0}
+sdxl_refiner=${LOAD_REFINER:-0}
 while [ $# -gt 0 ]; do
   case "$1" in
   --ckpt-path)
