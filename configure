@@ -250,12 +250,12 @@ function download_extension() {
     if [ -d ".git" ]; then
       git pull
     else
-      echo "Error: $extension_name already exists but is not a git repo. Cloning anyway" >&2
+      echo "$extension_name already exists but is not a git repo. Cloning anyway" >&2
       git init
       git remote add origin $extension_url
       default_branch=$(git remote show origin | grep "HEAD branch" | awk '{print $NF}')
       git fetch origin $default_branch
-      git checkout $default_branch
+      git reset origin/$default_branch
     fi
     popd
   else
