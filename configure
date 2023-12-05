@@ -244,7 +244,23 @@ function download_extension() {
   extension_name=${extension_name%.git}
   echo "Downloading $extension_name from $extension_url" >&2
   pushd $extension_path
-  git clone $extension_url
+  # if the extension already exists, we want to pull the latest version
+  if [ -d "$extension_name" ]; then
+    pushd $extension_name
+    if [ -d ".git" ]; then
+      git pull
+    else
+      echo "Error: $extension_name already exists but is not a git repo. Cloning anyway" >&2
+      git init
+      git remote add origin $extension_url
+      default_branch=$(git remote show origin | grep "HEAD branch" | awk '{print $NF}')
+      git fetch origin $default_branch
+      git checkout $default_branch
+    fi
+    popd
+  else
+    git clone $extension_url
+  fi
   all_extensions="$all_extensions $extension_name"
   popd
 }
