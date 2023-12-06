@@ -278,6 +278,13 @@ function download_file() {
   fi
 }
 
+if [ -n "$extension_urls" ]; then
+  IFS=',' read -ra extension_urls_array <<<"$extension_urls"
+  for url in "${extension_urls_array[@]}"; do
+    download_extension $url
+  done
+fi
+
 if [ -n "$civitai_version_ids" ]; then
   IFS=',' read -ra civitai_version_ids_array <<<"$civitai_version_ids"
   for model_version_id in "${civitai_version_ids_array[@]}"; do
@@ -338,13 +345,6 @@ if [ -n "$lora_urls" ]; then
     dest_file=${dest_file%%\?*}
     download_file $url $lora_path$dest_file
     all_lora="$all_lora $dest_file"
-  done
-fi
-
-if [ -n "$extension_urls" ]; then
-  IFS=',' read -ra extension_urls_array <<<"$extension_urls"
-  for url in "${extension_urls_array[@]}"; do
-    download_extension $url
   done
 fi
 
