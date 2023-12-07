@@ -1,8 +1,11 @@
+# We use this same pattern for all of our Stable Diffusion images,
+# so that we can easily build them all from the same Dockerfile.
 ARG VERSION=dynamic \
   BASE_IMAGE=saladtechnologies/sdnext
 
 FROM $BASE_IMAGE:$VERSION
 
+# All of the configuration is passed in via `--build-arg` flags.
 ARG CIVITAI_MODEL_VERSION_IDS="" \
   LOAD_REFINER=0 \
   LOAD_SDXL_BASE=0 \
@@ -13,6 +16,7 @@ ARG CIVITAI_MODEL_VERSION_IDS="" \
   LORA_URLS="" \
   ENTRYPOINT_FILE="./entrypoint"
 
+# Then we set all those values in the environment, as expected by the `configure` script.
 ENV CIVITAI_MODEL_VERSION_IDS=$CIVITAI_MODEL_VERSION_IDS \
   LOAD_REFINER=$LOAD_REFINER \
   LOAD_SDXL_BASE=$LOAD_SDXL_BASE \
@@ -23,4 +27,6 @@ ENV CIVITAI_MODEL_VERSION_IDS=$CIVITAI_MODEL_VERSION_IDS \
   LORA_URLS=$LORA_URLS \
   ENTRYPOINT_FILE=$ENTRYPOINT_FILE
 
+# Now we run our entrypoint script, which uses the `configure` script. By setting
+# `LOAD_ONLY=1`, we ensure that the entrypoint script will not start the server.
 RUN LOAD_ONLY=1 ${ENTRYPOINT_FILE}
