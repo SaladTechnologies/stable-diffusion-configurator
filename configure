@@ -20,6 +20,7 @@ Usage: ./configure [--options] [--help]
   --help: print this message
 '
 
+# Parse arguments, taking defaults from environment variables
 ckpt_path=${CKPT_PATH:-""}
 vae_path=${VAE_PATH:-""}
 controlnet_model_path=${CONTROLNET_MODEL_PATH:-""}
@@ -139,6 +140,8 @@ all_lora=""
 all_extensions=""
 sdxl=false
 
+
+# Helper functions to parse the JSON from the Civit.ai API
 function getModelFile() {
   json=$1
 
@@ -157,6 +160,8 @@ function getConfigFile() {
   echo $config_file
 }
 
+# Download a Civit.ai model , and any associated config file.
+# We use values from the API to dynamically set the destination path and filename.
 function download_civitai_model() {
   model_version_id=$1
   echo "Checking Civit.ai model $model_version_id" >&2
@@ -211,10 +216,13 @@ function download_civitai_model() {
 
   echo "Downloading $model_name ($model_type) as $model_filename from $download_url" >&2
 
-  # if base_model contains SDXL, we need to set the backend to diffusers
+  # if base_model contains SDXL, we set a flag, since downstream applications may need
+  # different launch arguments for SDXL models
   if [[ $base_model == *"SDXL"* ]]; then
     sdxl=true
   fi
+
+  # if the file already exists, we don't want to download it again
   if [ -f "$dest_file" ] && [ -s "$dest_file" ]; then
     echo "File $dest_file already exists and is not empty. Skipping download." >&2
   else
@@ -223,6 +231,7 @@ function download_civitai_model() {
     echo "Downloaded $model_name ($model_type) as $dest_file in $real_time" >&2
   fi
 
+  # if there is a config file, download it as well
   if [ -n "$config_file_obj" ]; then
     config_download_url=$(echo $config_file_obj | jq -r '.downloadUrl')
     download_location=$(dirname "$dest_file")/$config_filename
@@ -265,6 +274,8 @@ function download_extension() {
   popd
 }
 
+# Download a file from a URL, and save it to a destination path.
+# If the file already exists, we don't download it again.
 function download_file() {
   url=$1
   dest_file=$2
@@ -278,6 +289,8 @@ function download_file() {
   fi
 }
 
+# Install extensions first, since sometimes models need to go in directories
+# that are created by extensions
 if [ -n "$extension_urls" ]; then
   IFS=',' read -ra extension_urls_array <<<"$extension_urls"
   for url in "${extension_urls_array[@]}"; do
@@ -285,6 +298,7 @@ if [ -n "$extension_urls" ]; then
   done
 fi
 
+# Download Civit.ai models
 if [ -n "$civitai_version_ids" ]; then
   IFS=',' read -ra civitai_version_ids_array <<<"$civitai_version_ids"
   for model_version_id in "${civitai_version_ids_array[@]}"; do
@@ -292,6 +306,7 @@ if [ -n "$civitai_version_ids" ]; then
   done
 fi
 
+# Download checkpoints from URLs
 if [ -n "$ckpt_urls" ]; then
   if [ -z "$ckpt_path" ]; then
     echo "Error: No checkpoint path specified"
@@ -306,6 +321,7 @@ if [ -n "$ckpt_urls" ]; then
   done
 fi
 
+# Download VAE weights from URLs
 if [ -n "$vae_urls" ]; then
   if [ -z "$vae_path" ]; then
     echo "Error: No vae path specified"
@@ -320,6 +336,7 @@ if [ -n "$vae_urls" ]; then
   done
 fi
 
+# Download controlnet models from URLs
 if [ -n "$controlnet_model_urls" ]; then
   if [ -z "$controlnet_model_path" ]; then
     echo "Error: No controlnet model path specified"
@@ -334,6 +351,7 @@ if [ -n "$controlnet_model_urls" ]; then
   done
 fi
 
+# Download lora models from URLs
 if [ -n "$lora_urls" ]; then
   if [ -z "$lora_path" ]; then
     echo "Error: No lora path specified"
@@ -348,19 +366,21 @@ if [ -n "$lora_urls" ]; then
   done
 fi
 
+# Download SDXL Base model
 if [ "$sdxl_base" == "1" ]; then
   download_file https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors?download=true $ckpt_path"sd_xl_base_1.0.safetensors"
   sdxl=true
   all_ckpts="$all_ckpts sd_xl_base_1.0.safetensors"
 fi
 
+# Download SDXL Refiner model
 if [ "$sdxl_refiner" == "1" ]; then
   download_file https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0/resolve/main/sd_xl_refiner_1.0.safetensors?download=true $ckpt_path"sd_xl_refiner_1.0.safetensors"
   sdxl=true
   all_ckpts="$all_ckpts sd_xl_refiner_1.0.safetensors"
 fi
 
-# Create a JSON file with all the models we downloaded. Use JQ to format it nicely.
+# Create a JSON blob with all the models we downloaded. Use JQ to format it nicely.
 echo "Creating model manifest" >&2
 manifest_file="model_manifest.json"
 base_json='{
