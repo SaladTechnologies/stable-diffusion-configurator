@@ -1,0 +1,68 @@
+#! /usr/bin/env bash
+set -e
+
+# This script is executed by the Dockerfile entrypoint. It looks for these environment variables,
+# and if they are set, it will use them to download a model from Civit.ai or Huggingface respectively,
+# and then run the model server.
+# CIVITAI_MODEL_VERSION_ID: abc
+# LOAD_REFINER: 1 | 0
+
+# Ensure that --data-dir is set
+if [ -z $DATA_DIR ]; then
+  echo "Must specify data directory for application state"
+  exit 1
+fi
+
+LOAD_ONLY=${LOAD_ONLY:-0}
+
+base_path=$(dirname "$DATADIR")
+
+sd_model_path=$DATA_DIR/models/Stable-diffusion/
+vae_path=$DATA_DIR/models/VAE/
+extension_path=$DATA_DIR/extensions/
+controlnet_model_path=$base_path/extensions-builtin/sd-webui-controlnet/models/
+lora_model_path=$DATA_DIR/models/Lora/
+
+manifest=$(./configure --ckpt-path $sd_model_path --vae-path $vae_path --extension-path $extension_path --controlnet-model-path $controlnet_model_path --lora-path $lora_model_path)
+
+launch_args="--data-dir=$DATA_DIR --port $PORT --server-name $HOST --no-download --quick --use-cuda --docs"
+
+is_sdxl=$(echo $manifest | jq -r '.sdxl')
+
+backend="original"
+if [ "$is_sdxl" == "true" ]; then
+  backend="diffusers"
+fi
+launch_args="$launch_args --backend $backend"
+
+ckpt=$(echo $manifest | jq -r '.models.checkpoints | last')
+if [ "$ckpt" != "null" ]; then
+  launch_args="$launch_args --ckpt $sd_model_path$ckpt"
+fi
+vae="$(echo $manifest | jq -r '.models.vae | last')"
+if [ "$vae" != "null" ]; then
+  launch_args="$launch_args --vae $vae_path$vae"
+fi
+
+# If manifest.extensions isn't empty, then we need to add --insecure to the launch args
+extensions=$(echo $manifest | jq -r '.extensions')
+if [ "$extensions" != "[]" ]; then
+  launch_args="$launch_args --insecure"
+fi
+
+if [ "$LOAD_ONLY" == "1" ]; then
+  echo "Exiting after loading models"
+  exit 0
+fi
+
+# Ensure that potentially bind-mounted directories are owned by the user that runs the service
+chown -R $RUN_UID:$RUN_UID $DATA_DIR
+# Create directory for temporary files and assign it to the user that runs the service
+mkdir -p /tmp/gradio
+chown -R $RUN_UID:$RUN_UID /tmp/gradio
+
+exec runuser -u $(id -un $RUN_UID) -- \
+  python "$INSTALLDIR"/launch.py \
+  $launch_args \
+  $CLI_ARGS \
+  "$@"

@@ -43,3 +43,34 @@ manifest=$(./configure --ckpt-path ./data/models/ckpt --civitai-version-ids 1287
 echo $manifest
 # { "models": { "checkpoints": [ "dreamshaper_8.safetensors" ], "vae": [], "controlnet": [], "lora": [] }, "extensions": [], "sdxl": false }
 ```
+
+## Scripts and Dockerfiles
+
+In this repo is a script `./build-baked` that provides a consistent build interface for stable diffusion docker images that use this configuration utility.
+It is intended to paired with `Dockerfile.baked` to build docker images that include the models they need, and will not have to download them at runtime.
+These "baked" images are built from our `dynamic` images, which include the configuration utility and an entrypoint script.
+The `build-baked` script will build the docker image and tag it with the current git commit hash.
+There is an ***example*** `entrypoint` script that shows how to use the configuration utility to download the models and extensions.
+Your entrypoint script will need to be specific to the stable diffusion backend you are using.
+
+### ./build-baked
+
+```
+Usage: ./build-baked [OPTIONS]
+
+Options:
+  --push                          Push the built image to DockerHub. Default: false
+  --civitai-version-ids <v1,v2>   Comma-separated list of CivitAI model version IDs to load. Default: ""
+  --load-refiner                  Load the refiner model. Default: false
+  --load-sdxl-base                Load the SDXL base model. Default: false
+  --controlnet-urls <url1,url2>   Comma-separated list of ControlNet download URLs. Default: ""
+  --extension-urls <url1,url2>    Comma-separated list of extension Git URLs. Default: ""
+  --ckpt-urls <url1,url2>         Comma-separated list of CKPT download URLs. Default: ""
+  --vae-urls <url1,url2>          Comma-separated list of VAE download URLs. Default: ""
+  --lora-urls <url1,url2>         Comma-separated list of LoRa download URLs. Default: ""
+  --tag <tag>                     Tag to use for the image. Defaults to the CivitAI version IDs with a hyphen between them
+  --image <image>                 Image to build. Default: saladtechnologies/sdnext
+  --base-tag <tag>                Tag to use for the base image. Default: dynamic
+  --base-image <image>            Base image to use. Default: saladtechnologies/sdnext
+  --help                          Show this message and exit
+  ```
