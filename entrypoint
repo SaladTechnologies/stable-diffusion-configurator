@@ -4,8 +4,6 @@ set -e
 # This script is executed by the Dockerfile entrypoint. It looks for these environment variables,
 # and if they are set, it will use them to download a model from Civit.ai or Huggingface respectively,
 # and then run the model server.
-# CIVITAI_MODEL_VERSION_ID: abc
-# LOAD_REFINER: 1 | 0
 
 # Ensure that --data-dir is set
 if [ -z $DATA_DIR ]; then
@@ -13,32 +11,46 @@ if [ -z $DATA_DIR ]; then
   exit 1
 fi
 
+# If this is set, we won't start the inference server at the end, just download all the models
 LOAD_ONLY=${LOAD_ONLY:-0}
 
 base_path=$(dirname "$DATADIR")
 
+# These values are going to be specific to the docker image and inference server that you are using.
+# This one is for saladtechnologies/sdnext:dynamic
 sd_model_path=$DATA_DIR/models/Stable-diffusion/
 vae_path=$DATA_DIR/models/VAE/
 extension_path=$DATA_DIR/extensions/
 controlnet_model_path=$base_path/extensions-builtin/sd-webui-controlnet/models/
 lora_model_path=$DATA_DIR/models/Lora/
 
+# Here we execute the configuration script, passing along the paths where models need to end up.
+# The output of this script is a JSON manifest that contains the names of models that we need to load,
+# any extensions that were loaded, and whether or not we are using SDXL.
 manifest=$(./configure --ckpt-path $sd_model_path --vae-path $vae_path --extension-path $extension_path --controlnet-model-path $controlnet_model_path --lora-path $lora_model_path)
+# { "models": { "checkpoints": [ "dreamshaper_8.safetensors" ], "vae": [], "controlnet": [], "lora": [] }, "extensions": [], "sdxl": false }
 
+# It's likely that your launch arguments will need to be dynamically set based on the manifest.
 launch_args="--data-dir=$DATA_DIR --port $PORT --server-name $HOST --no-download --quick --use-cuda --docs"
 
+# "true" or "false"
 is_sdxl=$(echo $manifest | jq -r '.sdxl')
 
+# SD.Next requires using the diffusers backend for SDXL, but the original 
+# backend has broader extension support.
 backend="original"
 if [ "$is_sdxl" == "true" ]; then
   backend="diffusers"
 fi
 launch_args="$launch_args --backend $backend"
 
+# The last checkpoint in the list is the one that we will set as the default
 ckpt=$(echo $manifest | jq -r '.models.checkpoints | last')
 if [ "$ckpt" != "null" ]; then
   launch_args="$launch_args --ckpt $sd_model_path$ckpt"
 fi
+
+# The last VAE in the list is the one that we will set as the default
 vae="$(echo $manifest | jq -r '.models.vae | last')"
 if [ "$vae" != "null" ]; then
   launch_args="$launch_args --vae $vae_path$vae"
@@ -50,10 +62,15 @@ if [ "$extensions" != "[]" ]; then
   launch_args="$launch_args --insecure"
 fi
 
+# Optionally exit after loading models
 if [ "$LOAD_ONLY" == "1" ]; then
   echo "Exiting after loading models"
   exit 0
 fi
+
+# Then, launch the inference server. We also support setting additional launch arguments
+# via the CLI_ARGS environment variable. In this case, any arguments passed into the container 
+# via CMD will also be passed to the inference server.
 
 # Ensure that potentially bind-mounted directories are owned by the user that runs the service
 chown -R $RUN_UID:$RUN_UID $DATA_DIR
