@@ -184,7 +184,7 @@ function download_civitai_model() {
 
   download_url=$(echo $model_file_obj | jq -r '.downloadUrl')
   # convert model_file_obj.metadata into query params
-  metadata=$(echo $model_file_obj | jq -r '.metadata | to_entries | map("\(.key)=\(.value)") | join("&")')
+  metadata=$(echo $model_file_obj | jq -r '.metadata | to_entries | map(select(.value != null)) | map("\(.key)=\(.value)") | join("&")')
   download_url="$download_url?$metadata"
 
   model_name=$(echo $model_info | jq -r '.model.name')
