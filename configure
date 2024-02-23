@@ -285,7 +285,7 @@ function download_extension() {
 }
 
 declare -A extension_mapping
-extension_mapping["safetensor"]="safetensors"
+extension_mapping[safetensor]="safetensors"
 
 # Download a file from a URL, and save it to a destination path.
 # If the file already exists, we don't download it again.
