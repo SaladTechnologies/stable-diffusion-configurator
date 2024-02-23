@@ -284,12 +284,35 @@ function download_extension() {
   popd
 }
 
+declare -A extension_mapping
+extension_mapping[safetensor]="safetensors"
+
 # Download a file from a URL, and save it to a destination path.
 # If the file already exists, we don't download it again.
 function download_file() {
   url=$1
-  dest_file=$2
-  echo "Downloading $url as $dest_file" >&2
+  dest_dir=$2
+  content_disposition=$(curl -sI --max-time 3 "$url" | grep -i "Content-Disposition:" | tail -1)
+  filename=$(echo $content_disposition | awk -F'filename=' '{print $2}' | sed -e 's/"//g' -e 's/;//g')
+  if [ -z "$filename" ]; then
+    filename=$(basename $url)
+    filename=${filename%%\?*}
+
+    # if the filename does not have an extension, we guess from the url
+    if [[ $filename != *.* ]]; then
+      if echo "$url" | grep -q "[?&]format="; then
+        format_value=$(echo "$url" | grep -oE "[?&]format=[^&]*" | sed 's/[?&]format=//g' | tr '[:upper:]' '[:lower:]')
+        echo "Format: $format_value" >&2
+        if [ -n "${extension_mapping[$format_value]}" ]; then
+          filename="$filename.${extension_mapping[$format_value]}"
+        else
+          filename="$filename.$format_value"
+        fi
+      fi
+    fi
+  fi
+  dest_file=$dest_dir$filename
+  echo "Downloading $url to $dest_file" >&2
   if [ -f "$dest_file" ] && [ -s "$dest_file" ]; then
     echo "File $dest_file already exists and is not empty. Skipping download." >&2
   else
@@ -297,6 +320,7 @@ function download_file() {
     real_time=$(echo $time_output | grep real | awk '{print $2}')
     echo "Downloaded $url as $dest_file in $real_time" >&2
   fi
+  echo $filename
 }
 
 # Install extensions first, since sometimes models need to go in directories
@@ -324,9 +348,7 @@ if [ -n "$ckpt_urls" ]; then
   fi
   IFS=',' read -ra ckpt_urls_array <<<"$ckpt_urls"
   for url in "${ckpt_urls_array[@]}"; do
-    dest_file=$(basename $url)
-    dest_file=${dest_file%%\?*}
-    download_file $url $ckpt_path$dest_file
+    dest_file=$(download_file $url $ckpt_path)
     all_ckpts="$all_ckpts $dest_file"
   done
 fi
@@ -339,9 +361,7 @@ if [ -n "$vae_urls" ]; then
   fi
   IFS=',' read -ra vae_urls_array <<<"$vae_urls"
   for url in "${vae_urls_array[@]}"; do
-    dest_file=$(basename $url)
-    dest_file=${dest_file%%\?*}
-    download_file $url $vae_path$dest_file
+    dest_file=$(download_file $url $vae_path)
     all_vae="$all_vae $dest_file"
   done
 fi
@@ -354,9 +374,7 @@ if [ -n "$controlnet_model_urls" ]; then
   fi
   IFS=',' read -ra controlnet_model_urls_array <<<"$controlnet_model_urls"
   for url in "${controlnet_model_urls_array[@]}"; do
-    dest_file=$(basename $url)
-    dest_file=${dest_file%%\?*}
-    download_file $url $controlnet_model_path$dest_file
+    dest_file=$(download_file $url $controlnet_model_path)
     all_controlnet="$all_controlnet $dest_file"
   done
 fi
@@ -369,25 +387,23 @@ if [ -n "$lora_urls" ]; then
   fi
   IFS=',' read -ra lora_urls_array <<<"$lora_urls"
   for url in "${lora_urls_array[@]}"; do
-    dest_file=$(basename $url)
-    dest_file=${dest_file%%\?*}
-    download_file $url $lora_path$dest_file
+    dest_file=$(download_file $url $lora_path)
     all_lora="$all_lora $dest_file"
   done
 fi
 
 # Download SDXL Base model
 if [ "$sdxl_base" == "1" ]; then
-  download_file https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors?download=true $ckpt_path"sd_xl_base_1.0.safetensors"
+  dest_file=$(download_file https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors?download=true $ckpt_path)
   sdxl=true
-  all_ckpts="$all_ckpts sd_xl_base_1.0.safetensors"
+  all_ckpts="$all_ckpts $dest_file"
 fi
 
 # Download SDXL Refiner model
 if [ "$sdxl_refiner" == "1" ]; then
-  download_file https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0/resolve/main/sd_xl_refiner_1.0.safetensors?download=true $ckpt_path"sd_xl_refiner_1.0.safetensors"
+  dest_file=$(download_file https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0/resolve/main/sd_xl_refiner_1.0.safetensors?download=true $ckpt_path)
   sdxl=true
-  all_ckpts="$all_ckpts sd_xl_refiner_1.0.safetensors"
+  all_ckpts="$all_ckpts $dest_file"
 fi
 
 # Create a JSON blob with all the models we downloaded. Use JQ to format it nicely.
