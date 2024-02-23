@@ -306,6 +306,7 @@ function download_file() {
           filename="$filename.${extension_mapping[$format_value]}"
         else
           filename="$filename.$format_value"
+        fi
       fi
     fi
   fi
