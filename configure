@@ -292,7 +292,7 @@ extension_mapping["safetensor"]="safetensors"
 function download_file() {
   url=$1
   dest_dir=$2
-  content_disposition=$(curl -sI "$url" | grep -i "Content-Disposition:" | tail -1)
+  content_disposition=$(curl -sI --max-time 3 "$url" | grep -i "Content-Disposition:" | tail -1)
   filename=$(echo $content_disposition | awk -F'filename=' '{print $2}' | sed -e 's/"//g' -e 's/;//g')
   if [ -z "$filename" ]; then
     filename=$(basename $url)
@@ -306,7 +306,6 @@ function download_file() {
           filename="$filename.${extension_mapping[$format_value]}"
         else
           filename="$filename.$format_value"
-        filename="$filename.$format_value"
       fi
     fi
   fi
