@@ -302,6 +302,7 @@ function download_file() {
     if [[ $filename != *.* ]]; then
       if echo "$url" | grep -q "[?&]format="; then
         format_value=$(echo "$url" | grep -oE "[?&]format=[^&]*" | sed 's/[?&]format=//g' | tr '[:upper:]' '[:lower:]')
+        echo "Format: $format_value" >&2
         if [ -n "${extension_mapping[$format_value]}" ]; then
           filename="$filename.${extension_mapping[$format_value]}"
         else
