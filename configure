@@ -284,6 +284,9 @@ function download_extension() {
   popd
 }
 
+declare -A extension_mapping
+extension_mapping["safetensor"]="safetensors"
+
 # Download a file from a URL, and save it to a destination path.
 # If the file already exists, we don't download it again.
 function download_file() {
@@ -299,6 +302,10 @@ function download_file() {
     if [[ $filename != *.* ]]; then
       if echo "$url" | grep -q "[?&]format="; then
         format_value=$(echo "$url" | grep -oE "[?&]format=[^&]*" | sed 's/[?&]format=//g' | tr '[:upper:]' '[:lower:]')
+        if [ -n "${extension_mapping[$format_value]}" ]; then
+          filename="$filename.${extension_mapping[$format_value]}"
+        else
+          filename="$filename.$format_value"
         filename="$filename.$format_value"
       fi
     fi
