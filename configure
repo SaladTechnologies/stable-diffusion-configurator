@@ -147,9 +147,12 @@ function getModelFile() {
 
   # json is an object with a key "files" which is an array of objects. We want to select the object where .type = Model
   files=$(echo "$json" | jq -r '.files')
-  model_file=$(echo "$files" | jq -r '.[] | select(.type == "Model" and .primary == true)')
+  model_file=$(echo "$files" | jq -r '.[] | select(.primary == true)')
   if [ -z "$model_file" ]; then
-    model_file=$(echo "$files" | jq -r '.[] | select(.type == "Model")')
+    model_file=$(echo "$files" | jq -r '.[] | select(.type == "Model") | first')
+  fi
+  if [ -z "$model_file" ]; then
+    model_file=$(echo "$files" | jq -r '.[] | select(.type == "Pruned Model") | first')
   fi
 
   echo "$model_file"
